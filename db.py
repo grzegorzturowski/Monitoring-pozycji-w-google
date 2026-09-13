@@ -236,10 +236,12 @@ def get_history(conn: sqlite3.Connection, keyword_id: int):
 def get_latest_for_project(conn: sqlite3.Connection, project_id: int):
     """Dla każdego słowa kluczowego projektu zwraca jego pomiar o najpóźniejszym
     period_end (czyli faktycznie najbardziej aktualne dane, niezależnie od tego,
-    kiedy sprawdzenie zostało uruchomione)."""
+    kiedy sprawdzenie zostało uruchomione) oraz najlepszą (najniższą liczbowo)
+    pozycję, jaka kiedykolwiek została dla niego zanotowana."""
     return conn.execute(
         """
-        SELECT k.id, k.keyword, k.page_url, p.period_end, p.position, p.clicks, p.impressions, p.ctr
+        SELECT k.id, k.keyword, k.page_url, p.period_end, p.position, p.clicks, p.impressions, p.ctr,
+            (SELECT MIN(position) FROM positions WHERE keyword_id = k.id AND position IS NOT NULL) AS best_position
         FROM keywords k
         LEFT JOIN positions p ON p.id = (
             SELECT id FROM positions WHERE keyword_id = k.id ORDER BY period_end DESC LIMIT 1

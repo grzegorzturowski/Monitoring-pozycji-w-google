@@ -79,6 +79,7 @@ def run_backfill(
     start_date = end_date - timedelta(days=days_back - 1)
     start_str, end_str = start_date.isoformat(), end_date.isoformat()
 
+    total_rows = 0
     for index, (keyword_id, keyword, page_url) in enumerate(keywords, start=1):
         if progress_callback:
             progress_callback(f"Pobieram historię ({index}/{len(keywords)}): {keyword}")
@@ -91,6 +92,15 @@ def run_backfill(
                 "ctr": row["ctr"],
             }
             db.insert_position(conn, keyword_id, stats, row["date"], row["date"])
+        total_rows += len(daily_rows)
+        if progress_callback:
+            info = f"znaleziono dane z {len(daily_rows)} dni" if daily_rows else "brak wyświetleń w tym okresie"
+            progress_callback(f"({index}/{len(keywords)}) {keyword}: {info}")
 
     if progress_callback:
-        progress_callback("Zakończono pobieranie historii.")
+        if total_rows:
+            progress_callback(f"Zakończono. Pobrano łącznie {total_rows} dziennych wpisów.")
+        else:
+            progress_callback(
+                "Zakończono - Search Console nie zwróciło żadnych wyświetleń dla wybranych fraz w tym okresie."
+            )

@@ -77,7 +77,7 @@ W zakładce **"Słowa kluczowe"**:
   po jednym dla każdej interesującej Cię podstrony.
 - kliknij **"Sprawdź teraz"**, aby pobrać z Search Console aktualną średnią
   pozycję wszystkich fraz projektu (działa w tle, nie blokuje okna).
-- kliknij **"Pobierz historię wsteczną"**, żeby jednym zapytaniem uzupełnić
+- kliknij **"Pobierz dane historyczne"**, żeby jednym zapytaniem uzupełnić
   wykresy o dane sprzed instalacji aplikacji - podajesz liczbę dni wstecz
   (Search Console przechowuje dane ok. 16 miesięcy), a aplikacja pobiera
   dzienną pozycję dla każdej frazy w tym okresie. Przydatne przy pierwszym
