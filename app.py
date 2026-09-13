@@ -41,7 +41,7 @@ class ProjectDialog(ctk.CTkToplevel):
     def __init__(self, master, title: str = "Nowy projekt", confirm_text: str = "Dodaj", initial_name: str = "", initial_site_url: str = ""):
         super().__init__(master)
         self.title(title)
-        self.geometry("460x240")
+        self.geometry("480x420")
         self.resizable(False, False)
         self.result: tuple[str, str] | None = None
         self.grab_set()
@@ -59,11 +59,37 @@ class ProjectDialog(ctk.CTkToplevel):
         self.site_entry.pack(padx=16, pady=(4, 4))
         ctk.CTkLabel(
             self,
-            text="Musi dokładnie odpowiadać usłudze z listy w Search Console\n"
-            "(dla \"prefiksu URL\" pamiętaj o ukośniku na końcu: https://domena.pl/).",
+            text="Musi dokładnie odpowiadać usłudze z listy w Search Console.",
             text_color="gray60",
             justify="left",
-        ).pack(anchor="w", padx=16, pady=(0, 12))
+        ).pack(anchor="w", padx=16, pady=(0, 8))
+
+        examples_box = ctk.CTkFrame(self, fg_color=("gray90", "gray20"))
+        examples_box.pack(fill="x", padx=16, pady=(0, 12))
+        ctk.CTkLabel(
+            examples_box,
+            text="Wzór dla całej domeny (usługa typu \"Domena\"):",
+            text_color=("gray20", "gray80"),
+            justify="left",
+        ).pack(anchor="w", padx=12, pady=(8, 0))
+        ctk.CTkLabel(
+            examples_box,
+            text="sc-domain:mojadomena.pl",
+            font=ctk.CTkFont(family="Consolas", weight="bold"),
+            justify="left",
+        ).pack(anchor="w", padx=12, pady=(0, 6))
+        ctk.CTkLabel(
+            examples_box,
+            text="Wzór dla konkretnego adresu URL (usługa typu \"Prefiks adresu URL\",\npamiętaj o ukośniku na końcu):",
+            text_color=("gray20", "gray80"),
+            justify="left",
+        ).pack(anchor="w", padx=12, pady=(0, 0))
+        ctk.CTkLabel(
+            examples_box,
+            text="https://mojadomena.pl/",
+            font=ctk.CTkFont(family="Consolas", weight="bold"),
+            justify="left",
+        ).pack(anchor="w", padx=12, pady=(0, 8))
 
         button_row = ctk.CTkFrame(self, fg_color="transparent")
         button_row.pack(pady=4)
@@ -193,6 +219,8 @@ class App(ctk.CTk):
                 text=name,
                 anchor="w",
                 fg_color="transparent",
+                text_color=("gray10", "gray90"),
+                hover_color=("gray80", "gray25"),
                 command=lambda pid=project_id: self._select_project(pid),
             )
             btn.pack(fill="x", pady=2)
