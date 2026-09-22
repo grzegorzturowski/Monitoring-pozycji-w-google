@@ -14,6 +14,8 @@ Ograniczenia, o których warto wiedzieć:
 - Search Console publikuje dane z opóźnieniem 2-3 dni.
 - Pozycja to **średnia** z wybranego okresu (domyślnie 7 dni), a nie wynik
   pojedynczego wyszukiwania w danym momencie.
+- Kolumna "Popularność" korzysta z **Google Trends** (nieoficjalne API, nie
+  Search Console) - patrz sekcja "Popularność fraz (Google Trends)" poniżej.
 
 ## 1. Konfiguracja Google Search Console API (konto usługi)
 
@@ -83,16 +85,37 @@ W zakładce **"Słowa kluczowe"**:
   dzienną pozycję dla każdej frazy w tym okresie. Przydatne przy pierwszym
   uruchomieniu, żeby od razu zobaczyć historyczny trend zamiast czekać na
   kolejne codzienne sprawdzenia.
-
-W zakładce **"Wykresy"**:
-- zaznacz jedną lub więcej fraz po lewej i kliknij "Rysuj wykres", aby
-  zobaczyć zmianę średniej pozycji w czasie (oś pozycji jest odwrócona - im
-  wyżej na wykresie, tym lepsza pozycja).
+- zaznacz checkboxem jedną lub więcej fraz w tabeli - wykres pod tabelą
+  rysuje się automatycznie, bez dodatkowego przycisku (oś pozycji jest
+  odwrócona - im wyżej na wykresie, tym lepsza pozycja). Przycisk "Zaznacz /
+  odznacz wszystkie" zaznacza lub czyści zaznaczenie wszystkich fraz naraz.
+- kliknij **"Sprawdź popularność"**, żeby pobrać z Google Trends kolumnę
+  "Popularność" dla wszystkich fraz projektu (patrz sekcja niżej).
 
 W zakładce **"Statystyki"**:
 - podsumowanie projektu (liczba fraz, średnia pozycja, suma wyświetleń i
   kliknięć) oraz tabela z trendem (poprawa/spadek) dla każdej frazy względem
   poprzedniego sprawdzenia.
+
+## 5. Popularność fraz (Google Trends)
+
+Kolumna "Popularność" w tabeli słów kluczowych pokazuje **względne**
+zainteresowanie daną frazą w Google Trends, w skali 0-100, uśrednione z
+wybranego okresu (domyślnie ostatnie 12 miesięcy, ustawienie "Google Trends -
+okres" w Ustawieniach). To **nie jest** realna liczba wyszukiwań miesięcznie
+- Google Trends nie ujawnia takich danych publicznie. Liczby są w pełni
+porównywalne tylko pomiędzy frazami sprawdzonymi w tej samej partii (Google
+Trends porównuje maks. 5 fraz naraz - przy większej liczbie fraz aplikacja
+dzieli je automatycznie na kilka partii, każda znormalizowana osobno).
+
+Źródłem jest **nieoficjalne** API Google Trends (biblioteka `pytrends`
+odpytuje wewnętrzny, nieudokumentowany interfejs) - w przeciwieństwie do
+Search Console może się kiedyś zepsuć wraz ze zmianami po stronie Google i
+bywa czasem ograniczane limitami zapytań (błąd 429 - w takim wypadku po
+prostu spróbuj ponownie za jakiś czas).
+
+Kraj i okres, dla których liczona jest popularność, można zmienić w
+Ustawieniach ("Google Trends - kraj" i "Google Trends - okres").
 
 ## Dane
 

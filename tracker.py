@@ -6,6 +6,7 @@ from typing import Callable
 
 import db
 from search_console import build_service, get_keyword_daily_stats, get_keyword_stats
+from trends import get_popularity_for_keywords
 
 
 def compute_date_range(date_range_days: int, data_delay_days: int) -> tuple[str, str]:
@@ -104,3 +105,35 @@ def run_backfill(
             progress_callback(
                 "Zakończono - Search Console nie zwróciło żadnych wyświetleń dla wybranych fraz w tym okresie."
             )
+
+
+def run_popularity_check(
+    conn: sqlite3.Connection,
+    project_id: int,
+    progress_callback: Callable[[str], None] | None = None,
+) -> None:
+    """Pobiera z Google Trends względną popularność (0-100) każdej unikalnej
+    frazy w projekcie i zapisuje ją przy wszystkich jej wpisach (tej samej
+    frazy dla różnych podstron dotyczy ta sama popularność - to metryka
+    samej frazy, niezależna od podstrony)."""
+    keywords = db.list_keywords(conn, project_id)
+    if not keywords:
+        if progress_callback:
+            progress_callback("Brak słów kluczowych do sprawdzenia.")
+        return
+
+    geo = db.get_setting(conn, "trends_geo") or "PL"
+    timeframe = db.get_setting(conn, "trends_timeframe") or "today 12-m"
+
+    unique_texts = list(dict.fromkeys(keyword for _kid, keyword, _page in keywords))
+    if progress_callback:
+        progress_callback(f"Pobieram popularność {len(unique_texts)} unikalnych fraz z Google Trends...")
+
+    popularity_by_text = get_popularity_for_keywords(unique_texts, geo=geo, timeframe=timeframe)
+
+    for keyword_id, keyword, _page_url in keywords:
+        db.set_keyword_popularity(conn, keyword_id, popularity_by_text.get(keyword))
+
+    if progress_callback:
+        found = sum(1 for v in popularity_by_text.values() if v is not None)
+        progress_callback(f"Zakończono. Popularność pobrana dla {found}/{len(unique_texts)} fraz.")

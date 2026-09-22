@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS keywords (
     keyword TEXT NOT NULL,
     page_url TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
+    popularity INTEGER,
+    popularity_checked_at TEXT,
     UNIQUE(project_id, keyword, page_url)
 );
 
@@ -45,6 +47,8 @@ DEFAULT_SETTINGS = {
     "service_account_file": "service-account.json",
     "date_range_days": "7",
     "data_delay_days": "3",
+    "trends_geo": "PL",
+    "trends_timeframe": "today 12-m",
 }
 
 
@@ -78,6 +82,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
         )
         conn.commit()
         conn.execute("PRAGMA foreign_keys = ON")
+
+    columns = [row[1] for row in conn.execute("PRAGMA table_info(keywords)")]
+    if "popularity" not in columns:
+        conn.execute("ALTER TABLE keywords ADD COLUMN popularity INTEGER")
+        conn.execute("ALTER TABLE keywords ADD COLUMN popularity_checked_at TEXT")
+        conn.commit()
 
     # Wcześniejsza wersja aplikacji wstawiała pozycje bez sprawdzania duplikatów,
     # więc dla tego samego (słowo kluczowe, okres) mogło powstać kilka wierszy.
@@ -171,6 +181,14 @@ def list_keywords(conn: sqlite3.Connection, project_id: int):
     ).fetchall()
 
 
+def set_keyword_popularity(conn: sqlite3.Connection, keyword_id: int, popularity: int | None) -> None:
+    conn.execute(
+        "UPDATE keywords SET popularity = ?, popularity_checked_at = ? WHERE id = ?",
+        (popularity, _now_iso(), keyword_id),
+    )
+    conn.commit()
+
+
 def add_keyword(conn: sqlite3.Connection, project_id: int, keyword: str, page_url: str = "") -> int:
     cur = conn.execute(
         "INSERT OR IGNORE INTO keywords (project_id, keyword, page_url, created_at) VALUES (?, ?, ?, ?)",
@@ -241,7 +259,8 @@ def get_latest_for_project(conn: sqlite3.Connection, project_id: int):
     return conn.execute(
         """
         SELECT k.id, k.keyword, k.page_url, p.period_end, p.position, p.clicks, p.impressions, p.ctr,
-            (SELECT MIN(position) FROM positions WHERE keyword_id = k.id AND position IS NOT NULL) AS best_position
+            (SELECT MIN(position) FROM positions WHERE keyword_id = k.id AND position IS NOT NULL) AS best_position,
+            k.popularity
         FROM keywords k
         LEFT JOIN positions p ON p.id = (
             SELECT id FROM positions WHERE keyword_id = k.id ORDER BY period_end DESC LIMIT 1

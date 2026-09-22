@@ -113,7 +113,7 @@ class SettingsDialog(ctk.CTkToplevel):
         super().__init__(master)
         self.conn = conn
         self.title("Ustawienia")
-        self.geometry("500x300")
+        self.geometry("500x430")
         self.resizable(False, False)
         self.grab_set()
 
@@ -134,6 +134,20 @@ class SettingsDialog(ctk.CTkToplevel):
         self.delay_entry = ctk.CTkEntry(self, width=100)
         self.delay_entry.insert(0, db.get_setting(conn, "data_delay_days") or "3")
         self.delay_entry.pack(anchor="w", padx=16, pady=(4, 16))
+
+        ctk.CTkLabel(
+            self, text="Google Trends - kraj (kod ISO, np. PL; puste = cały świat):"
+        ).pack(anchor="w", padx=16)
+        self.trends_geo_entry = ctk.CTkEntry(self, width=100)
+        self.trends_geo_entry.insert(0, db.get_setting(conn, "trends_geo") or "PL")
+        self.trends_geo_entry.pack(anchor="w", padx=16, pady=(4, 12))
+
+        ctk.CTkLabel(
+            self, text="Google Trends - okres (np. \"today 12-m\", \"today 3-m\", \"today 5-y\"):"
+        ).pack(anchor="w", padx=16)
+        self.trends_timeframe_entry = ctk.CTkEntry(self, width=200)
+        self.trends_timeframe_entry.insert(0, db.get_setting(conn, "trends_timeframe") or "today 12-m")
+        self.trends_timeframe_entry.pack(anchor="w", padx=16, pady=(4, 16))
 
         button_row = ctk.CTkFrame(self, fg_color="transparent")
         button_row.pack(pady=4)
@@ -157,6 +171,8 @@ class SettingsDialog(ctk.CTkToplevel):
         db.set_setting(self.conn, "service_account_file", self.service_account_entry.get().strip())
         db.set_setting(self.conn, "date_range_days", str(date_range_days))
         db.set_setting(self.conn, "data_delay_days", str(data_delay_days))
+        db.set_setting(self.conn, "trends_geo", self.trends_geo_entry.get().strip())
+        db.set_setting(self.conn, "trends_timeframe", self.trends_timeframe_entry.get().strip() or "today 12-m")
         self.destroy()
 
 
@@ -167,6 +183,8 @@ class App(ctk.CTk):
         self.current_project_id: int | None = None
         self.keyword_checkboxes: dict[int, tuple[ctk.CTkCheckBox, ctk.BooleanVar]] = {}
         self.chart_canvas = None
+        self.keywords_sort_index = 1  # indeks w krotce z db.get_latest_for_project - domyślnie "Fraza kluczowa"
+        self.keywords_sort_reverse = False
 
         self.title("Monitoring pozycji w Google")
         self.geometry("1100x700")
@@ -232,7 +250,6 @@ class App(ctk.CTk):
             self.current_project_id = None
             self._highlight_selected_project()
             self.refresh_keywords_tab()
-            self.refresh_charts_tab()
             self.refresh_stats_tab()
 
     def _highlight_selected_project(self):
@@ -243,7 +260,6 @@ class App(ctk.CTk):
         self.current_project_id = project_id
         self._highlight_selected_project()
         self.refresh_keywords_tab()
-        self.refresh_charts_tab()
         self.refresh_stats_tab()
 
     def _on_add_project(self):
@@ -305,11 +321,9 @@ class App(ctk.CTk):
         self.tabview.grid(row=0, column=1, sticky="nswe", padx=16, pady=16)
 
         self.tab_keywords = self.tabview.add("Słowa kluczowe")
-        self.tab_charts = self.tabview.add("Wykresy")
         self.tab_stats = self.tabview.add("Statystyki")
 
         self._build_keywords_tab()
-        self._build_charts_tab()
         self._build_stats_tab()
 
     # --- zakładka: słowa kluczowe ---
@@ -342,45 +356,100 @@ class App(ctk.CTk):
             action_row, text="Pobierz dane historyczne", fg_color="gray40", command=self._on_run_backfill
         )
         self.backfill_button.pack(side="left", padx=(8, 0))
+        self.popularity_button = ctk.CTkButton(
+            action_row, text="Sprawdź popularność", fg_color="gray40", command=self._on_run_popularity_check
+        )
+        self.popularity_button.pack(side="left", padx=(8, 0))
+        self.select_all_button = ctk.CTkButton(
+            action_row, text="Zaznacz / odznacz wszystkie", fg_color="gray40", command=self._on_toggle_select_all
+        )
+        self.select_all_button.pack(side="left", padx=(8, 0))
         self.status_label = ctk.CTkLabel(action_row, text="")
         self.status_label.pack(side="left", padx=12)
 
-        self.keywords_scroll = ctk.CTkScrollableFrame(tab)
-        self.keywords_scroll.grid(row=3, column=0, sticky="nswe")
-        for col, weight in enumerate([2, 2, 1, 1, 1, 1, 2, 1]):
+        self.keywords_scroll = ctk.CTkScrollableFrame(tab, height=220)
+        self.keywords_scroll.grid(row=3, column=0, sticky="we")
+        for col, weight in enumerate([0, 2, 2, 1, 1, 1, 1, 1, 2, 1]):
             self.keywords_scroll.grid_columnconfigure(col, weight=weight)
-        tab.grid_rowconfigure(3, weight=1)
+
+        ctk.CTkLabel(
+            tab, text="Wykres (zaznacz frazy w tabeli powyżej):", font=ctk.CTkFont(weight="bold")
+        ).grid(row=4, column=0, sticky="w", pady=(12, 4))
+        self.chart_area = ctk.CTkFrame(tab)
+        self.chart_area.grid(row=5, column=0, sticky="nswe")
+        tab.grid_rowconfigure(5, weight=1)
+
+    def _on_sort_keywords(self, sort_index: int):
+        if self.keywords_sort_index == sort_index:
+            self.keywords_sort_reverse = not self.keywords_sort_reverse
+        else:
+            self.keywords_sort_index = sort_index
+            self.keywords_sort_reverse = False
+        self.refresh_keywords_tab()
+
+    def _sort_keyword_rows(self, rows):
+        idx = self.keywords_sort_index
+        with_value = [r for r in rows if r[idx] is not None]
+        without_value = [r for r in rows if r[idx] is None]
+        with_value.sort(key=lambda r: r[idx], reverse=self.keywords_sort_reverse)
+        return with_value + without_value
 
     def refresh_keywords_tab(self):
+        previously_selected = {kid for kid, (_cb, var) in self.keyword_checkboxes.items() if var.get()}
+
         for widget in self.keywords_scroll.winfo_children():
             widget.destroy()
+        self.keyword_checkboxes.clear()
 
+        # (indeks w krotce zwracanej przez db.get_latest_for_project, nagłówek) - None = kolumna niesortowalna
         headers = [
-            "Fraza kluczowa",
-            "Podstrona",
-            "Pozycja",
-            "Najlepsza pozycja",
-            "Wyświetlenia",
-            "Kliknięcia",
-            "Dane z dnia",
-            "",
+            (None, ""),
+            (1, "Fraza kluczowa"),
+            (2, "Podstrona"),
+            (4, "Pozycja"),
+            (8, "Najlepsza pozycja"),
+            (9, "Popularność"),
+            (6, "Wyświetlenia"),
+            (5, "Kliknięcia"),
+            (3, "Dane z dnia"),
+            (None, ""),
         ]
-        for col, text in enumerate(headers):
-            ctk.CTkLabel(self.keywords_scroll, text=text, font=ctk.CTkFont(weight="bold")).grid(
-                row=0, column=col, sticky="w", padx=6, pady=(0, 6)
-            )
+        for col, (sort_index, text) in enumerate(headers):
+            if sort_index is None:
+                ctk.CTkLabel(self.keywords_scroll, text=text, font=ctk.CTkFont(weight="bold")).grid(
+                    row=0, column=col, sticky="w", padx=6, pady=(0, 6)
+                )
+                continue
+
+            label_text = text
+            if self.keywords_sort_index == sort_index:
+                label_text += " ▼" if self.keywords_sort_reverse else " ▲"
+            ctk.CTkButton(
+                self.keywords_scroll,
+                text=label_text,
+                font=ctk.CTkFont(weight="bold"),
+                fg_color="transparent",
+                text_color=("gray10", "gray90"),
+                hover_color=("gray80", "gray25"),
+                anchor="w",
+                height=24,
+                command=lambda idx=sort_index: self._on_sort_keywords(idx),
+            ).grid(row=0, column=col, sticky="we", padx=2, pady=(0, 6))
 
         if self.current_project_id is None:
             ctk.CTkLabel(self.keywords_scroll, text="Wybierz lub utwórz projekt.").grid(
-                row=1, column=0, columnspan=8, sticky="w", padx=6
+                row=1, column=0, columnspan=10, sticky="w", padx=6
             )
+            self._redraw_chart()
             return
 
         rows = db.get_latest_for_project(self.conn, self.current_project_id)
+        rows = self._sort_keyword_rows(rows)
         if not rows:
             ctk.CTkLabel(self.keywords_scroll, text="Brak słów kluczowych - dodaj pierwsze powyżej.").grid(
-                row=1, column=0, columnspan=8, sticky="w", padx=6
+                row=1, column=0, columnspan=10, sticky="w", padx=6
             )
+            self._redraw_chart()
             return
 
         for row_index, (
@@ -393,28 +462,39 @@ class App(ctk.CTk):
             impressions,
             _ctr,
             best_position,
+            popularity,
         ) in enumerate(rows, start=1):
+            var = ctk.BooleanVar(value=keyword_id in previously_selected)
+            checkbox = ctk.CTkCheckBox(
+                self.keywords_scroll, text="", width=20, variable=var, command=self._on_keyword_checkbox_toggled
+            )
+            checkbox.grid(row=row_index, column=0, padx=6, pady=2)
+            self.keyword_checkboxes[keyword_id] = (checkbox, var)
+
             ctk.CTkLabel(self.keywords_scroll, text=keyword, anchor="w").grid(
-                row=row_index, column=0, sticky="w", padx=6, pady=2
+                row=row_index, column=1, sticky="w", padx=6, pady=2
             )
             ctk.CTkLabel(self.keywords_scroll, text=page_url or "cała domena", anchor="w").grid(
-                row=row_index, column=1, sticky="w", padx=6
+                row=row_index, column=2, sticky="w", padx=6
             )
             ctk.CTkLabel(self.keywords_scroll, text=f"{position:.1f}" if position is not None else "-").grid(
-                row=row_index, column=2
+                row=row_index, column=3
             )
             ctk.CTkLabel(
                 self.keywords_scroll,
                 text=f"{best_position:.1f}" if best_position is not None else "-",
                 text_color="#2FA84F" if best_position is not None else ("gray10", "gray90"),
-            ).grid(row=row_index, column=3)
-            ctk.CTkLabel(self.keywords_scroll, text=str(impressions) if impressions is not None else "-").grid(
-                row=row_index, column=4
-            )
-            ctk.CTkLabel(self.keywords_scroll, text=str(clicks) if clicks is not None else "-").grid(
+            ).grid(row=row_index, column=4)
+            ctk.CTkLabel(self.keywords_scroll, text=str(popularity) if popularity is not None else "-").grid(
                 row=row_index, column=5
             )
-            ctk.CTkLabel(self.keywords_scroll, text=period_end or "-").grid(row=row_index, column=6)
+            ctk.CTkLabel(self.keywords_scroll, text=str(impressions) if impressions is not None else "-").grid(
+                row=row_index, column=6
+            )
+            ctk.CTkLabel(self.keywords_scroll, text=str(clicks) if clicks is not None else "-").grid(
+                row=row_index, column=7
+            )
+            ctk.CTkLabel(self.keywords_scroll, text=period_end or "-").grid(row=row_index, column=8)
             ctk.CTkButton(
                 self.keywords_scroll,
                 text="Usuń",
@@ -422,7 +502,9 @@ class App(ctk.CTk):
                 fg_color="#8B2E2E",
                 hover_color="#6E2424",
                 command=lambda kid=keyword_id: self._on_delete_keyword(kid),
-            ).grid(row=row_index, column=7, padx=6)
+            ).grid(row=row_index, column=9, padx=6)
+
+        self._redraw_chart()
 
     def _on_add_keyword(self):
         if self.current_project_id is None:
@@ -436,13 +518,11 @@ class App(ctk.CTk):
         self.new_keyword_entry.delete(0, "end")
         self.new_page_entry.delete(0, "end")
         self.refresh_keywords_tab()
-        self.refresh_charts_tab()
 
     def _on_delete_keyword(self, keyword_id: int):
         if messagebox.askyesno("Usuń słowo kluczowe", "Usunąć to słowo kluczowe wraz z jego historią?"):
             db.delete_keyword(self.conn, keyword_id)
             self.refresh_keywords_tab()
-            self.refresh_charts_tab()
             self.refresh_stats_tab()
 
     def _on_run_check(self):
@@ -505,59 +585,41 @@ class App(ctk.CTk):
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def _on_run_popularity_check(self):
+        if self.current_project_id is None:
+            messagebox.showinfo("Brak projektu", "Najpierw wybierz lub utwórz projekt.")
+            return
+
+        self.check_button.configure(state="disabled")
+        self.backfill_button.configure(state="disabled")
+        self.popularity_button.configure(state="disabled")
+        self.status_label.configure(text="Sprawdzanie popularności w toku...")
+        project_id = self.current_project_id
+
+        def progress(message: str):
+            self.after(0, lambda: self.status_label.configure(text=message))
+
+        def worker():
+            error = None
+            try:
+                tracker.run_popularity_check(self.conn, project_id, progress_callback=progress)
+            except Exception as e:  # noqa: BLE001 - pokazujemy dowolny błąd użytkownikowi
+                error = e
+            self.after(0, lambda: self._on_check_finished(error))
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def _on_check_finished(self, error: Exception | None):
         self.check_button.configure(state="normal")
         self.backfill_button.configure(state="normal")
+        self.popularity_button.configure(state="normal")
         if error:
             self.status_label.configure(text="Błąd podczas sprawdzania.")
             ErrorDialog(self, "Błąd", str(error))
         else:
             self.status_label.configure(text="Zakończono.")
         self.refresh_keywords_tab()
-        self.refresh_charts_tab()
         self.refresh_stats_tab()
-
-    # --- zakładka: wykresy ---
-
-    def _build_charts_tab(self):
-        tab = self.tab_charts
-        tab.grid_columnconfigure(1, weight=1)
-        tab.grid_rowconfigure(0, weight=1)
-
-        left = ctk.CTkFrame(tab, width=220)
-        left.grid(row=0, column=0, sticky="ns", padx=(0, 12))
-        ctk.CTkLabel(left, text="Wybierz słowa kluczowe:", font=ctk.CTkFont(weight="bold")).pack(
-            anchor="w", padx=8, pady=(8, 4)
-        )
-        self.select_all_button = ctk.CTkButton(
-            left, text="Zaznacz / odznacz wszystkie", fg_color="gray40", command=self._on_toggle_select_all
-        )
-        self.select_all_button.pack(padx=8, pady=(0, 4), fill="x")
-        self.chart_checkbox_frame = ctk.CTkScrollableFrame(left, width=200, height=360)
-        self.chart_checkbox_frame.pack(fill="both", expand=True, padx=8, pady=4)
-        ctk.CTkButton(left, text="Rysuj wykres", command=self._on_draw_chart).pack(padx=8, pady=8, fill="x")
-
-        self.chart_area = ctk.CTkFrame(tab)
-        self.chart_area.grid(row=0, column=1, sticky="nswe")
-
-    def refresh_charts_tab(self):
-        for widget in self.chart_checkbox_frame.winfo_children():
-            widget.destroy()
-        self.keyword_checkboxes.clear()
-
-        if self.chart_canvas is not None:
-            self.chart_canvas.get_tk_widget().destroy()
-            self.chart_canvas = None
-
-        if self.current_project_id is None:
-            return
-
-        for keyword_id, keyword, page_url in db.list_keywords(self.conn, self.current_project_id):
-            label = f"{keyword} ({page_url})" if page_url else keyword
-            var = ctk.BooleanVar(value=False)
-            checkbox = ctk.CTkCheckBox(self.chart_checkbox_frame, text=label, variable=var)
-            checkbox.pack(anchor="w", pady=2)
-            self.keyword_checkboxes[keyword_id] = (checkbox, var)
 
     def _on_toggle_select_all(self):
         if not self.keyword_checkboxes:
@@ -566,20 +628,32 @@ class App(ctk.CTk):
         new_value = not all_selected
         for _cb, var in self.keyword_checkboxes.values():
             var.set(new_value)
+        self._redraw_chart()
 
-    def _on_draw_chart(self):
-        selected = [(kid, cb.cget("text")) for kid, (cb, var) in self.keyword_checkboxes.items() if var.get()]
-        if not selected:
-            messagebox.showinfo("Brak wyboru", "Zaznacz co najmniej jedno słowo kluczowe.")
+    def _on_keyword_checkbox_toggled(self):
+        self._redraw_chart()
+
+    def _redraw_chart(self):
+        for widget in self.chart_area.winfo_children():
+            widget.destroy()
+        self.chart_canvas = None
+
+        selected_ids = [kid for kid, (_cb, var) in self.keyword_checkboxes.items() if var.get()]
+        if not selected_ids:
+            ctk.CTkLabel(
+                self.chart_area, text="Zaznacz co najmniej jedną frazę w tabeli powyżej, aby zobaczyć wykres."
+            ).pack(padx=8, pady=8)
             return
 
+        labels_by_id = {
+            kid: (f"{keyword} ({page_url})" if page_url else keyword)
+            for kid, keyword, page_url in db.list_keywords(self.conn, self.current_project_id)
+        }
         series = {}
-        for keyword_id, keyword_text in selected:
+        for keyword_id in selected_ids:
+            label = labels_by_id.get(keyword_id, f"#{keyword_id}")
             history = db.get_history(self.conn, keyword_id)
-            series[keyword_text] = [(checked_at, position) for checked_at, position, *_ in history]
-
-        if self.chart_canvas is not None:
-            self.chart_canvas.get_tk_widget().destroy()
+            series[label] = [(period_end, position) for period_end, position, *_ in history]
 
         self.chart_canvas = build_position_chart(self.chart_area, series)
         self.chart_canvas.get_tk_widget().pack(fill="both", expand=True, padx=8, pady=8)
@@ -646,6 +720,7 @@ class App(ctk.CTk):
             impressions,
             ctr,
             _best_position,
+            _popularity,
         ) in enumerate(rows, start=1):
             history = db.get_history(self.conn, keyword_id)
             positions_with_data = [h[1] for h in history if h[1] is not None]
