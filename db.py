@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS keywords (
     created_at TEXT NOT NULL,
     popularity INTEGER,
     popularity_checked_at TEXT,
+    positions_checked_at TEXT,
     UNIQUE(project_id, keyword, page_url)
 );
 
@@ -87,6 +88,16 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "popularity" not in columns:
         conn.execute("ALTER TABLE keywords ADD COLUMN popularity INTEGER")
         conn.execute("ALTER TABLE keywords ADD COLUMN popularity_checked_at TEXT")
+        conn.commit()
+
+    columns = [row[1] for row in conn.execute("PRAGMA table_info(keywords)")]
+    if "positions_checked_at" not in columns:
+        conn.execute("ALTER TABLE keywords ADD COLUMN positions_checked_at TEXT")
+        # startowo: moment ostatniego zapisanego pomiaru frazy
+        conn.execute(
+            "UPDATE keywords SET positions_checked_at = "
+            "(SELECT MAX(checked_at) FROM positions WHERE keyword_id = keywords.id)"
+        )
         conn.commit()
 
     # Wcześniejsza wersja aplikacji wstawiała pozycje bez sprawdzania duplikatów,
@@ -181,6 +192,26 @@ def list_keywords(conn: sqlite3.Connection, project_id: int):
     ).fetchall()
 
 
+def list_keywords_with_popularity(conn: sqlite3.Connection, project_id: int):
+    """Zwraca (id, popularity) - popularity None, jeśli nie była jeszcze sprawdzana."""
+    return conn.execute(
+        "SELECT id, popularity FROM keywords WHERE project_id = ? ORDER BY keyword", (project_id,)
+    ).fetchall()
+
+
+def get_keyword_check_times(conn: sqlite3.Connection, project_id: int) -> dict[int, tuple[str | None, str | None]]:
+    """Zwraca {id: (positions_checked_at, popularity_checked_at)} - znaczniki czasu UTC w ISO albo None."""
+    rows = conn.execute(
+        "SELECT id, positions_checked_at, popularity_checked_at FROM keywords WHERE project_id = ?", (project_id,)
+    ).fetchall()
+    return {kid: (positions_at, popularity_at) for kid, positions_at, popularity_at in rows}
+
+
+def mark_positions_checked(conn: sqlite3.Connection, keyword_id: int) -> None:
+    conn.execute("UPDATE keywords SET positions_checked_at = ? WHERE id = ?", (_now_iso(), keyword_id))
+    conn.commit()
+
+
 def set_keyword_popularity(conn: sqlite3.Connection, keyword_id: int, popularity: int | None) -> None:
     conn.execute(
         "UPDATE keywords SET popularity = ?, popularity_checked_at = ? WHERE id = ?",
@@ -249,6 +280,12 @@ def get_history(conn: sqlite3.Connection, keyword_id: int):
         """,
         (keyword_id,),
     ).fetchall()
+
+
+def get_last_period_end(conn: sqlite3.Connection, keyword_id: int) -> str | None:
+    """Zwraca najpóźniejszy period_end zapisany dla słowa kluczowego (albo None, gdy brak historii)."""
+    row = conn.execute("SELECT MAX(period_end) FROM positions WHERE keyword_id = ?", (keyword_id,)).fetchone()
+    return row[0] if row else None
 
 
 def get_latest_for_project(conn: sqlite3.Connection, project_id: int):
