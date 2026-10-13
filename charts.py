@@ -69,15 +69,20 @@ def build_position_chart(
     return canvas
 
 
-def build_site_popularity_chart(parent, series: list[tuple[str, float]]) -> FigureCanvasTkAgg:
-    """series: [(data_iso, wskaźnik_0_100), ...] -> canvas gotowy do .get_tk_widget()."""
+def build_site_popularity_chart(parent, series: list[tuple[str, str, float]]) -> FigureCanvasTkAgg:
+    """series: [(początek_okresu_iso, koniec_okresu_iso, wskaźnik_0_100), ...] -> canvas gotowy do
+    .get_tk_widget(). Okres jednodniowy (początek == koniec) to wartość dzienna, dłuższy - średnia z okresu."""
     fig = Figure(figsize=(9, 3.4), dpi=100)
     ax = fig.add_subplot(111)
 
     if series:
-        xs = [datetime.fromisoformat(d) for d, _ in series]
-        ys = [v for _, v in series]
-        (line,) = ax.plot(xs, ys, color=SERIES_COLOR, linewidth=2, pickradius=6)
+        xs = [datetime.fromisoformat(start) for start, _, _ in series]
+        ys = [v for _, _, v in series]
+        aggregated = any(start != end for start, end, _ in series)
+        period_by_x = {datetime.fromisoformat(start): (start, end) for start, end, _ in series}
+        (line,) = ax.plot(
+            xs, ys, color=SERIES_COLOR, linewidth=2, pickradius=6, marker="o" if aggregated else None, markersize=5
+        )
         ax.fill_between(xs, ys, color=SERIES_COLOR, alpha=0.12, linewidth=0)
         ax.set_ylim(bottom=0, top=max(max(ys) * 1.15, 1))
         fig.autofmt_xdate()
@@ -97,10 +102,55 @@ def build_site_popularity_chart(parent, series: list[tuple[str, float]]) -> Figu
             canvas,
             ax,
             [(line, "Popularność strony")],
-            lambda _label, x_val, y_val: f"{x_val.strftime('%Y-%m-%d')}\nPopularność: {y_val:.1f}%",
+            lambda _label, x_val, y_val: _format_period_tooltip(period_by_x.get(x_val), x_val, y_val),
         )
     canvas.draw()
     return canvas
+
+
+def build_ai_visibility_chart(parent, engine_series: dict[str, list[tuple[str, float]]]) -> FigureCanvasTkAgg:
+    """engine_series: {nazwa asystenta AI: [(dzień_iso, % fraz z cytowaną domeną), ...]} -> canvas
+    gotowy do .get_tk_widget()."""
+    fig = Figure(figsize=(9, 2.6), dpi=100, layout="constrained")
+    ax = fig.add_subplot(111)
+
+    plotted_lines = []
+    for engine_name, series in engine_series.items():
+        if not series:
+            continue
+        xs = [datetime.fromisoformat(day) for day, _ in series]
+        ys = [value for _, value in series]
+        (line,) = ax.plot(xs, ys, marker="o", markersize=5, linewidth=1.5, label=engine_name, pickradius=6)
+        plotted_lines.append((line, engine_name))
+
+    ax.set_ylabel("Frazy z cytowaną domeną (%)")
+    ax.set_ylim(0, 105)
+    ax.grid(True, alpha=0.3)
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    if plotted_lines:
+        ax.legend(loc="best", fontsize=8)
+        fig.autofmt_xdate()
+    else:
+        ax.text(0.5, 0.5, "Brak danych do wyświetlenia", ha="center", va="center", transform=ax.transAxes)
+
+    canvas = FigureCanvasTkAgg(fig, master=parent)
+    if plotted_lines:
+        _attach_tooltip(
+            canvas,
+            ax,
+            plotted_lines,
+            lambda engine_name, x_val, y_val: f"{engine_name}\n{x_val.strftime('%Y-%m-%d')}\nCytowana: {y_val:.0f}%",
+        )
+    canvas.draw()
+    return canvas
+
+
+def _format_period_tooltip(period: tuple[str, str] | None, x_val, y_val: float) -> str:
+    start, end = period or (x_val.strftime("%Y-%m-%d"),) * 2
+    if start == end:
+        return f"{start}\nPopularność: {y_val:.1f}%"
+    return f"{start} – {end}\nŚrednia popularność: {y_val:.1f}%"
 
 
 def _attach_tooltip(canvas, ax, plotted_lines, format_text) -> None:
@@ -113,10 +163,13 @@ def _attach_tooltip(canvas, ax, plotted_lines, format_text) -> None:
         textcoords="offset points",
         bbox=dict(boxstyle="round", fc="#ffffe0", ec="gray", alpha=0.95),
         arrowprops=dict(arrowstyle="->"),
-        fontsize=8,
+        fontsize=11,
         visible=False,
         zorder=10,
     )
+    # dymek nie może brać udziału w layoucie "constrained" - inaczej wystający poza osie dymek
+    # powoduje przeliczenie marginesów i kurczenie się wykresu przy każdym najechaniu
+    annotation.set_in_layout(False)
 
     shown = {"point": None}  # (linia, indeks) aktualnie pokazanego punktu - przerysowujemy tylko przy zmianie
 
@@ -142,6 +195,12 @@ def _attach_tooltip(canvas, ax, plotted_lines, format_text) -> None:
             x_val, y_val = line.get_data()[0][idx], line.get_data()[1][idx]
             annotation.xy = (x_val, y_val)
             annotation.set_text(format_text(label, x_val, y_val))
+            # dymek otwieramy w stronę środka osi, żeby przy krawędziach nie wychodził poza wykres
+            ax_x, ax_y = ax.transAxes.inverted().transform((event.x, event.y))
+            to_left, to_bottom = ax_x > 0.5, ax_y > 0.5
+            annotation.xyann = (-12 if to_left else 12, -12 if to_bottom else 12)
+            annotation.set_horizontalalignment("right" if to_left else "left")
+            annotation.set_verticalalignment("top" if to_bottom else "bottom")
             annotation.set_visible(True)
             canvas.draw_idle()
             return

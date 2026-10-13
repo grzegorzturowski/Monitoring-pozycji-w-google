@@ -3,3 +3,4 @@ service-account.json
 data/*.db
 __pycache__/
 *.pyc
+client_secret*.json

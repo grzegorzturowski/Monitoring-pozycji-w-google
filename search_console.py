@@ -13,10 +13,13 @@ def build_service(service_account_file: str):
     return build("searchconsole", "v1", credentials=credentials, cache_discovery=False)
 
 
-def _query_filters(keyword: str, page_url: str = "") -> list[dict]:
+def _query_filters(keyword: str, page_url: str = "", country: str = "") -> list[dict]:
+    """country: kod kraju alpha-3 małymi literami (np. "pol"), pusty = wszystkie kraje."""
     filters = [{"dimension": "query", "operator": "equals", "expression": keyword.lower()}]
     if page_url:
         filters.append({"dimension": "page", "operator": "equals", "expression": page_url})
+    if country:
+        filters.append({"dimension": "country", "operator": "equals", "expression": country})
     return filters
 
 
@@ -55,16 +58,17 @@ def get_keyword_stats(
 
 
 def get_keyword_daily_stats(
-    service, site_url: str, keyword: str, start_date: str, end_date: str, page_url: str = ""
+    service, site_url: str, keyword: str, start_date: str, end_date: str, page_url: str = "", country: str = ""
 ) -> list[dict]:
     """Zwraca dzienną historię (date, position, clicks, impressions, ctr) dla
     frazy w podanym okresie - jednym zapytaniem, przydatne do sprawdzania
-    pozycji wstecz (Search Console przechowuje dane ok. 16 miesięcy)."""
+    pozycji wstecz (Search Console przechowuje dane ok. 16 miesięcy).
+    country: zawęża dane do jednego kraju (alpha-3, np. "pol")."""
     body = {
         "startDate": start_date,
         "endDate": end_date,
         "dimensions": ["date", "query"],
-        "dimensionFilterGroups": [{"filters": _query_filters(keyword, page_url)}],
+        "dimensionFilterGroups": [{"filters": _query_filters(keyword, page_url, country)}],
         "rowLimit": 1000,
     }
 

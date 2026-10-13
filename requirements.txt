@@ -3,3 +3,6 @@ matplotlib>=3.8
 google-api-python-client>=2.100
 google-auth>=2.23
 pytrends>=4.9
+google-ads>=25
+google-auth-oauthlib>=1.0
+requests>=2.31
