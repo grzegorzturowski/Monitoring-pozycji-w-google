@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS settings (
 
 DEFAULT_SETTINGS = {
     "service_account_file": "service-account.json",
-    "data_delay_days": "3",
+    "data_delay_days": "5",
     "trends_timeframe": "today 12-m",
     "popularity_source": "trends",
     "ads_language": "pl",

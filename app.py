@@ -1,6 +1,8 @@
 """GUI aplikacji (CustomTkinter): projekty, słowa kluczowe, wykresy, statystyki."""
 
 import threading
+import tkinter as tk
+from collections.abc import Callable
 from datetime import date, datetime
 from tkinter import filedialog, messagebox, ttk
 
@@ -19,6 +21,124 @@ ctk.set_default_color_theme("blue")
 
 RECENT_DATA_REFRESH_DAYS = 7  # ile ostatnich dni pozycji pobierać ponownie przy starcie (Search Console je uzupełnia)
 POPULARITY_REFRESH_DAYS = 7  # jak często (w dniach) odświeżać popularność fraz (Google Ads / Trends) przy starcie
+
+
+class HeadingTooltip:
+    """Dymek z opisem kolumny po najechaniu myszą na nagłówek tabeli (ttk.Treeview).
+    texts: {id kolumny: tekst albo funkcja zwracająca tekst (gdy opis zależy od ustawień)}."""
+
+    DELAY_MS = 400
+
+    def __init__(self, tree: ttk.Treeview, texts: dict[str, str | Callable[[], str]]):
+        self.tree = tree
+        self.texts = texts
+        self.column: str | None = None  # kolumna, nad której nagłówkiem jest teraz kursor
+        self.window: tk.Toplevel | None = None
+        self.after_id: str | None = None
+        tree.bind("<Motion>", self._on_motion, add="+")
+        tree.bind("<Leave>", self._on_leave, add="+")
+        tree.bind("<ButtonPress>", lambda _event: self._hide(), add="+")
+
+    def _column_at(self, event) -> str | None:
+        if self.tree.identify_region(event.x, event.y) != "heading":
+            return None
+        number = self.tree.identify_column(event.x).lstrip("#")  # "#3" - numeracja od 1
+        columns = self.tree["columns"]
+        if not number.isdigit() or not 1 <= int(number) <= len(columns):
+            return None
+        return columns[int(number) - 1]
+
+    def _on_motion(self, event):
+        column = self._column_at(event)
+        if column == self.column:
+            return
+        self._hide()
+        self.column = column
+        if column in self.texts:
+            self.after_id = self.tree.after(self.DELAY_MS, lambda: self._show(event.x_root, event.y_root))
+
+    def _on_leave(self, _event):
+        self._hide()
+        self.column = None
+
+    def _show(self, x: int, y: int):
+        self.after_id = None
+        text = self.texts[self.column]
+        if callable(text):
+            text = text()
+        dark = ctk.get_appearance_mode() == "Dark"
+        self.window = tk.Toplevel(self.tree)
+        self.window.overrideredirect(True)
+        tk.Label(
+            self.window,
+            text=text,
+            justify="left",
+            wraplength=380,
+            background="#3a3a3a" if dark else "#ffffe8",
+            foreground="#dce4ee" if dark else "#1a1a1a",
+            relief="solid",
+            borderwidth=1,
+            padx=8,
+            pady=6,
+            font=("Segoe UI", 11),
+        ).pack()
+        # dymek nie może wyjść poza prawą krawędź ekranu (ostatnie kolumny tabeli)
+        self.window.update_idletasks()
+        x = min(x + 12, self.window.winfo_screenwidth() - self.window.winfo_reqwidth() - 8)
+        self.window.geometry(f"+{x}+{y + 20}")
+
+    def _hide(self):
+        if self.after_id:
+            self.tree.after_cancel(self.after_id)
+            self.after_id = None
+        if self.window:
+            self.window.destroy()
+            self.window = None
+
+
+# opisy kolumn tabel pokazywane w dymkach (HeadingTooltip) - wspólne dla kolumn o tym samym id
+COLUMN_TOOLTIPS = {
+    "check": "Zaznacz frazę, żeby zobaczyć jej pozycję na wykresie.",
+    "keyword": "Fraza wpisywana w Google, dla której śledzona jest pozycja Twojej strony.",
+    "page": (
+        "Podstrona, której pozycja jest śledzona.\n"
+        "„cała domena” = pozycja dowolnej strony z Twojej domeny."
+    ),
+    "position": (
+        "Średnia pozycja w wynikach Google z ostatniego dnia z danymi (kolumna „Dane z dnia”).\n"
+        "1 = pierwszy wynik - im mniejsza liczba, tym lepiej.\n"
+        "„-” = tego dnia strona nie pojawiła się w wynikach dla tej frazy."
+    ),
+    "best": "Najlepsza (najmniejsza) dzienna pozycja zanotowana od daty „Sprawdzaj dane od” projektu.",
+    "impressions7": (
+        "Wyświetlenia - ile razy dziennie Twoja strona pojawiała się w wynikach Google dla tej frazy.\n"
+        "Średnia z 7 ostatnich dni z danymi."
+    ),
+    "impressions30": (
+        "Wyświetlenia - ile razy dziennie Twoja strona pojawiała się w wynikach Google dla tej frazy.\n"
+        "Średnia z 30 ostatnich dni z danymi."
+    ),
+    "clicks7": (
+        "Kliknięcia - ile razy dziennie ktoś kliknął Twoją stronę w wynikach Google dla tej frazy.\n"
+        "Średnia z 7 ostatnich dni z danymi."
+    ),
+    "clicks30": (
+        "Kliknięcia - ile razy dziennie ktoś kliknął Twoją stronę w wynikach Google dla tej frazy.\n"
+        "Średnia z 30 ostatnich dni z danymi."
+    ),
+    "date": (
+        "Ostatni dzień, z którego są dane z Search Console.\n"
+        "Google publikuje je z kilkudniowym opóźnieniem (do ustawienia w Ustawieniach)."
+    ),
+    "trend": (
+        "Zmiana pozycji między dwoma ostatnimi dniami, w których strona pojawiła się w wynikach.\n"
+        "▲ poprawa = strona jest wyżej w Google, ▼ spadek = niżej."
+    ),
+    "ctr": (
+        "CTR - jaki procent wyświetleń zakończył się kliknięciem (kliknięcia ÷ wyświetlenia).\n"
+        "Z ostatniego dnia z danymi."
+    ),
+}
 
 
 class ErrorDialog(ctk.CTkToplevel):
@@ -211,7 +331,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(body, text="Opóźnienie danych Search Console (dni):").pack(anchor="w", padx=16)
         self.delay_entry = ctk.CTkEntry(body, width=100)
-        self.delay_entry.insert(0, db.get_setting(conn, "data_delay_days") or "3")
+        self.delay_entry.insert(0, db.get_setting(conn, "data_delay_days") or "5")
         self.delay_entry.pack(anchor="w", padx=16, pady=(4, 16))
 
         # --- popularność fraz ---
@@ -397,8 +517,15 @@ class App(ctk.CTk):
         self.chart_canvas = None
         self.sync_pending = False  # pobranie danych zlecone w trakcie innego sprawdzania
         self.sync_pending_popularity = False  # ...razem ze sprawdzeniem popularności nowych fraz
-        self.keywords_sort_index = 1  # indeks w krotce z db.get_latest_for_project - domyślnie "Fraza kluczowa"
-        self.keywords_sort_reverse = False
+        # sortowanie tabeli fraz zapamiętane z poprzedniego uruchomienia - domyślnie popularność malejąco
+        sort_indexes = {col_id: sort_index for col_id, sort_index, _text in self.KEYWORD_SORT_COLUMNS}
+        saved_sort_column = db.get_setting(self.conn, "keywords_sort_column")
+        if saved_sort_column in sort_indexes:
+            self.keywords_sort_index = sort_indexes[saved_sort_column]  # indeks w krotce z _get_keyword_rows
+            self.keywords_sort_reverse = db.get_setting(self.conn, "keywords_sort_reverse") == "1"
+        else:
+            self.keywords_sort_index = sort_indexes["popularity"]
+            self.keywords_sort_reverse = True
 
         self.title("Monitoring pozycji w Google")
         self.geometry("1100x700")  # rozmiar po wyjściu z maksymalizacji
@@ -626,9 +753,12 @@ class App(ctk.CTk):
         self._table_stripe_bg = "#303030" if dark else "#f0f0f2"
         self._table_checked_bg = "#1d3b57" if dark else "#dbe9f7"
 
-    def _make_table(self, parent, columns: list[tuple[str, str, int, str]]) -> ttk.Treeview:
+    def _make_table(
+        self, parent, columns: list[tuple[str, str, int, str]], tooltips: dict | None = None
+    ) -> ttk.Treeview:
         """columns: [(id, nagłówek, szerokość, wyrównanie "w"/"center"), ...]. Zwraca Treeview
-        umieszczony w `parent` razem z paskiem przewijania (parent musi używać grid)."""
+        umieszczony w `parent` razem z paskiem przewijania (parent musi używać grid).
+        Nagłówki kolumn mają dymki z COLUMN_TOOLTIPS, nadpisane/uzupełnione przez `tooltips`."""
         tree = ttk.Treeview(parent, columns=[c[0] for c in columns], show="headings", selectmode="none")
         # szerokości kolumn Treeview są w pikselach i nie skalują się same z DPI (czcionki tak)
         scaling = ctk.ScalingTracker.get_widget_scaling(self)
@@ -643,6 +773,11 @@ class App(ctk.CTk):
         parent.grid_rowconfigure(0, weight=1)
         tree.tag_configure("stripe", background=self._table_stripe_bg)
         tree.tag_configure("checked", background=self._table_checked_bg)
+        column_ids = {c[0] for c in columns}
+        texts = {
+            col_id: text for col_id, text in {**COLUMN_TOOLTIPS, **(tooltips or {})}.items() if col_id in column_ids
+        }
+        tree.heading_tooltip = HeadingTooltip(tree, texts)  # referencja, żeby obiekt żył razem z tabelą
         return tree
 
     # --- zakładka: słowa kluczowe ---
@@ -722,6 +857,7 @@ class App(ctk.CTk):
                 ("date", "Dane z dnia", 95, "center"),
                 ("delete", "", 60, "center"),
             ],
+            tooltips={"popularity": self._popularity_tooltip},
         )
         self.keywords_table.bind("<ButtonRelease-1>", self._on_keywords_table_click)
 
@@ -768,6 +904,9 @@ class App(ctk.CTk):
         else:
             self.keywords_sort_index = sort_index
             self.keywords_sort_reverse = False
+        sort_column = next(col_id for col_id, idx, _text in self.KEYWORD_SORT_COLUMNS if idx == sort_index)
+        db.set_setting(self.conn, "keywords_sort_column", sort_column)
+        db.set_setting(self.conn, "keywords_sort_reverse", "1" if self.keywords_sort_reverse else "0")
         self.refresh_keywords_tab()
 
     def _sort_keyword_rows(self, rows):
@@ -869,6 +1008,19 @@ class App(ctk.CTk):
             )
 
         self._redraw_chart()
+
+    def _popularity_tooltip(self) -> str:
+        if db.get_setting(self.conn, "popularity_source") == tracker.POPULARITY_SOURCE_ADS:
+            return (
+                "Średnia miesięczna liczba wyszukiwań frazy w Google z ostatnich 12 miesięcy\n"
+                "(Planer słów kluczowych Google Ads). „<10” = mniej niż 10 wyszukiwań.\n"
+                "Pobierana przyciskiem „Sprawdź popularność”."
+            )
+        return (
+            "Względne zainteresowanie frazą w Google Trends, w skali 0-100\n"
+            "(100 = najpopularniejsza fraza w porównaniu). To nie jest liczba wyszukiwań.\n"
+            "Pobierana przyciskiem „Sprawdź popularność”."
+        )
 
     @staticmethod
     def _format_popularity(popularity: int | None, ads_source: bool) -> str:
@@ -1378,6 +1530,20 @@ class App(ctk.CTk):
             [("keyword", "Fraza kluczowa", 220, "w")]
             + [(engine, name, 120, "center") for engine, (name, *_rest) in ai_visibility.ENGINES.items()]
             + [("date", "Sprawdzono", 130, "center")],
+            tooltips={
+                "keyword": "Fraza zadawana asystentowi AI tak, jak wpisałby ją użytkownik.",
+                **{
+                    engine: (
+                        f"Czy {name} poleca Twoją domenę w odpowiedzi na tę frazę:\n"
+                        "✔ #N = domena wśród źródeł odpowiedzi, na N-tym miejscu,\n"
+                        "~ wzmianka = domena lub nazwa marki tylko w tekście odpowiedzi,\n"
+                        "✗ brak = ani jedno, ani drugie,\n"
+                        "⚠ błąd = zapytanie się nie udało (przycisk „Ponów frazy z błędem”)."
+                    )
+                    for engine, (name, *_rest) in ai_visibility.ENGINES.items()
+                },
+                "date": "Data i godzina ostatniego sprawdzenia frazy.",
+            },
         )
         self.ai_table.bind("<ButtonRelease-1>", self._on_ai_table_click)
 

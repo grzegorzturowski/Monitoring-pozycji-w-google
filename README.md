@@ -6,12 +6,121 @@ Search Console**. Wszystko obsługuje się z okna aplikacji - dodawanie
 projektów (domen), słów kluczowych, sprawdzanie pozycji, wykresy w czasie i
 statystyki.
 
+---
+
+# Szybki start (dla początkujących)
+
+Nie musisz znać się na programowaniu. Wystarczy wykonać kroki po kolei.
+Całość zajmuje ok. 20-30 minut i robi się ją **tylko raz**.
+
+## Krok 1. Zainstaluj Pythona
+
+1. Wejdź na https://www.python.org/downloads/ i kliknij żółty przycisk
+   **"Download Python"**.
+2. Uruchom pobrany plik.
+3. **Ważne:** na pierwszym ekranie instalatora zaznacz na dole pole
+   **"Add python.exe to PATH"**, dopiero potem kliknij **"Install Now"**.
+
+## Krok 2. Pobierz program
+
+1. Na tej stronie GitHuba kliknij zielony przycisk **"Code"** →
+   **"Download ZIP"**.
+2. Rozpakuj pobrany plik ZIP (prawy przycisk myszy → "Wyodrębnij wszystkie")
+   do dowolnego folderu, np. na Pulpit.
+
+## Krok 3. Zainstaluj dodatki potrzebne programowi
+
+1. Otwórz rozpakowany folder z programem.
+2. Kliknij w pasek adresu na górze okna folderu (tam, gdzie widać ścieżkę),
+   wpisz `cmd` i naciśnij **Enter**. Otworzy się czarne okno.
+3. Wpisz (albo wklej) poniższe polecenie i naciśnij **Enter**:
+
+   ```
+   pip install -r requirements.txt
+   ```
+
+4. Poczekaj, aż skończy (pojawi się znowu migający kursor). Okno możesz
+   zamknąć.
+
+## Krok 4. Daj programowi dostęp do Twoich danych z Google
+
+Program czyta pozycje z **Google Search Console**. Twoja strona musi już być
+tam dodana i zweryfikowana (https://search.google.com/search-console).
+Teraz trzeba utworzyć "klucz", którym program będzie się logował:
+
+1. Wejdź na https://console.cloud.google.com/ i zaloguj się kontem Google.
+2. Na górze kliknij wybór projektu → **"Nowy projekt"** → wpisz dowolną nazwę
+   → **"Utwórz"**. Upewnij się, że ten projekt jest wybrany.
+3. Otwórz https://console.cloud.google.com/apis/library/searchconsole.googleapis.com
+   i kliknij **"Włącz"**.
+4. W menu po lewej wybierz **"Interfejsy API i usługi"** → **"Dane
+   uwierzytelniające"** → **"Utwórz dane uwierzytelniające"** → **"Konto
+   usługi"**. Wpisz dowolną nazwę i klikaj **"Gotowe"** (resztę pól pomiń).
+5. Kliknij na utworzone konto usługi → zakładka **"Klucze"** → **"Dodaj
+   klucz"** → **"Utwórz nowy klucz"** → **JSON** → **"Utwórz"**. Pobierze się
+   plik `.json` - przenieś go do folderu z programem.
+6. Na stronie konta usługi skopiuj jego **adres e-mail** (kończy się na
+   `.iam.gserviceaccount.com`).
+7. Wróć do Search Console → wybierz swoją stronę → **"Ustawienia"** →
+   **"Użytkownicy i uprawnienia"** → **"Dodaj użytkownika"** → wklej
+   skopiowany e-mail → uprawnienie **"Ograniczone"** → **"Dodaj"**.
+   Jeśli masz kilka stron, powtórz to dla każdej.
+
+> **Uwaga:** plik `.json` z kroku 5 to Twój klucz dostępu. Nie wysyłaj go
+> nikomu i nie wrzucaj do internetu.
+
+## Krok 5. Uruchom program
+
+Kliknij dwukrotnie plik **`_uruchom.bat`** w folderze programu.
+
+Przy pierwszym uruchomieniu:
+
+1. Kliknij **"Ustawienia"** (panel po lewej) → przy polu "Plik konta usługi"
+   kliknij **"Wybierz..."** → wskaż plik `.json` z kroku 4 → **"Zapisz"**.
+2. Kliknij **"+ Nowy projekt"** i wpisz:
+   - **Nazwa projektu** - cokolwiek, np. nazwa Twojej strony,
+   - **Adres usługi w Search Console** - dokładnie tak, jak widać go w
+     Search Console na liście stron:
+     - jeśli tam jest sama domena (np. `mojadomena.pl`), wpisz
+       `sc-domain:mojadomena.pl`,
+     - jeśli jest pełny adres (np. `https://mojadomena.pl/`), wpisz go
+       dokładnie tak samo, razem z `/` na końcu,
+   - **Sprawdzaj dane od** - od jakiej daty pokazywać historię (najdalej ok.
+     16 miesięcy wstecz).
+3. W zakładce **"Słowa kluczowe"** wpisz frazę (np. `fryzjer kraków`) i kliknij
+   **"Dodaj słowo kluczowe"**. Dodaj tak wszystkie frazy, które chcesz śledzić.
+4. Zaznacz frazy w tabeli - pod spodem pojawi się wykres pozycji.
+
+Gotowe. Od teraz wystarczy uruchamiać `_uruchom.bat` - program sam pobierze
+nowe dane.
+
+## Coś nie działa?
+
+- **"pip" lub "python" nie jest rozpoznawany** - przy instalacji Pythona nie
+  zaznaczono "Add python.exe to PATH". Zainstaluj Pythona jeszcze raz i
+  zaznacz to pole.
+- **Okno programu od razu się zamyka** - nie wykonano kroku 3. Wróć do niego.
+- **Błąd z uprawnieniami / "User does not have sufficient permission"** -
+  e-mail konta usługi nie został dodany w Search Console (krok 4, punkt 7)
+  albo adres usługi w projekcie jest wpisany inaczej niż w Search Console.
+- **"Brak danych" przy frazie** - Google nie pokazał jeszcze Twojej strony
+  dla tej frazy albo dane są świeże. Search Console publikuje dane z kilkudniowym
+  opóźnieniem, dlatego program domyślnie pomija 5 ostatnich dni.
+
+Funkcje dodatkowe (popularność fraz z Google Ads, obecność w AI) są
+opcjonalne - opisane są w szczegółowej dokumentacji poniżej.
+
+---
+
+# Dokumentacja szczegółowa
+
 Ograniczenia, o których warto wiedzieć:
 
 - Dane pojawiają się dopiero, gdy Google zarejestruje wyświetlenie Twojej
   strony dla danej frazy - jeśli fraza nie generuje żadnych wyświetleń,
   aplikacja pokaże "brak danych" zamiast np. "pozycja 100+".
-- Search Console publikuje dane z opóźnieniem 2-3 dni.
+- Search Console publikuje dane z kilkudniowym opóźnieniem - domyślnie
+  pomijanych jest 5 ostatnich dni (do zmiany w Ustawieniach).
 - Pozycja to **średnia dzienna** z Search Console (średnia ze wszystkich
   wyświetleń danego dnia), a nie wynik pojedynczego wyszukiwania.
 - Kolumna "Popularność" korzysta z **Google Trends** (nieoficjalne API) albo

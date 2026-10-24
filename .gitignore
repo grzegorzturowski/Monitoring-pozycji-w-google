@@ -1,6 +1,8 @@
 .env
 service-account.json
-data/*.db
+data/
 __pycache__/
 *.pyc
 client_secret*.json
+# klucze Google pobierane są jako .json pod różnymi nazwami - projekt nie ma żadnych własnych plików .json
+*.json

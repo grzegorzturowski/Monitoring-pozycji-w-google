@@ -93,7 +93,7 @@ def run_sync(
     refresh_days: dodatkowo pobiera ponownie tyle ostatnich dni (Search
     Console uzupełnia je z opóźnieniem) - raz dziennie dla każdej frazy.
     Zwraca (liczba fraz, dla których coś pobrano, liczba zapisanych dziennych wpisów)."""
-    data_delay_days = int(db.get_setting(conn, "data_delay_days") or 3)
+    data_delay_days = int(db.get_setting(conn, "data_delay_days") or 5)
     end_date = date.today() - timedelta(days=data_delay_days)
     start_date = date.fromisoformat(db.get_project_data_from(conn, project_id))
 
